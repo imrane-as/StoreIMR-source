@@ -23,7 +23,7 @@ export async function supabaseRest(path: string, init: RequestInit = {}) {
   const key = required(serviceKey, "SUPABASE_SERVICE_ROLE_KEY");
   return fetch(`${required(supabaseUrl, "NEXT_PUBLIC_SUPABASE_URL")}${path}`, {
     ...init,
-    headers: { apikey: key, ...(key.startsWith("eyJ") ? { authorization: `Bearer ${key}` } : {}), ...(init.headers || {}) },
+    headers: { apikey: key, authorization: `Bearer ${key}`, ...(init.headers || {}) },
     cache: "no-store",
   });
 }

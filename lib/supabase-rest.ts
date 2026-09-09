@@ -16,7 +16,7 @@ export async function verifyAdmin(request: Request) {
   });
   if (!response.ok) return false;
   const user = await response.json() as { email?: string };
-  return !!user.email && user.email.toLowerCase() === required(process.env.ADMIN_EMAIL, "ADMIN_EMAIL").toLowerCase();
+  return !!user.email && user.email.trim().toLowerCase() === required(process.env.ADMIN_EMAIL, "ADMIN_EMAIL").trim().toLowerCase();
 }
 
 export async function supabaseRest(path: string, init: RequestInit = {}) {

@@ -12,6 +12,7 @@ Boutique Next.js avec catalogue public, pages produit, liens Vinted et espace d'
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `ADMIN_EMAIL` (le même email que l'utilisateur créé)
+   - `OPENAI_API_KEY` (clé secrète pour l’assistant de rédaction IA)
 5. Relancer le déploiement, puis ouvrir `/admin`.
 
 La clé `SUPABASE_SERVICE_ROLE_KEY` doit rester secrète et ne doit jamais être copiée dans un fichier GitHub.

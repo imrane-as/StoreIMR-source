@@ -11,6 +11,7 @@ export type Product = {
   description: string;
   details: string[];
   vintedUrl: string;
+  imageUrls: string[];
 };
 
 export const products: Product[] = [
@@ -26,7 +27,8 @@ export const products: Product[] = [
     position: "15% 55%",
     description: "Une paire Nike Air Max confortable et polyvalente, soigneusement contrôlée avant sa mise en vente.",
     details: ["Pointure 43", "Semelle Air visible", "Paire vérifiée", "Expédition rapide avec suivi"],
-    vintedUrl: "https://www.vinted.fr"
+    vintedUrl: "https://www.vinted.fr",
+    imageUrls: []
   },
   {
     id: 2,
@@ -40,7 +42,8 @@ export const products: Product[] = [
     position: "85% 55%",
     description: "La Reebok Zig Kinetica II associe un look dynamique à un amorti confortable pour le quotidien.",
     details: ["Pointure 43", "Coloris blanc et noir", "État proche du neuf", "Envoi protégé"],
-    vintedUrl: "https://www.vinted.fr"
+    vintedUrl: "https://www.vinted.fr",
+    imageUrls: []
   },
   {
     id: 3,
@@ -54,7 +57,8 @@ export const products: Product[] = [
     position: "45% 30%",
     description: "Un sweat facile à porter, sélectionné pour sa coupe propre et son confort.",
     details: ["Taille L", "Coupe confortable", "Neuf sans étiquette", "Article contrôlé"],
-    vintedUrl: "https://www.vinted.fr"
+    vintedUrl: "https://www.vinted.fr",
+    imageUrls: []
   },
   {
     id: 4,
@@ -68,6 +72,7 @@ export const products: Product[] = [
     position: "58% 76%",
     description: "Une veste noire urbaine et sobre, idéale pour compléter une tenue streetwear.",
     details: ["Taille M", "Coloris noir", "Très bon état", "Disponible en un seul exemplaire"],
-    vintedUrl: "https://www.vinted.fr"
+    vintedUrl: "https://www.vinted.fr",
+    imageUrls: []
   }
 ];

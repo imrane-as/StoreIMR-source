@@ -23,7 +23,7 @@ export async function supabaseRest(path: string, init: RequestInit = {}) {
   const key = required(serviceKey, "SUPABASE_SERVICE_ROLE_KEY");
   return fetch(`${required(supabaseUrl, "NEXT_PUBLIC_SUPABASE_URL")}${path}`, {
     ...init,
-    headers: { apikey: key, authorization: `Bearer ${key}`, ...(init.headers || {}) },
+    headers: { apikey: key, ...(key.startsWith("eyJ") ? { authorization: `Bearer ${key}` } : {}), ...(init.headers || {}) },
     cache: "no-store",
   });
 }
@@ -39,7 +39,7 @@ export async function uploadProductImages(files: File[]) {
       headers: { "content-type": file.type || "application/octet-stream", "x-upsert": "false" },
       body: file,
     });
-    if (!response.ok) throw new Error("Échec du téléchargement d’une photo");
+    if (!response.ok) { const detail = await response.text(); throw new Error(`Échec photo (${response.status}) : ${detail}`); }
     urls.push(`${supabaseUrl}/storage/v1/object/public/product-images/${objectPath}`);
   }
   return urls;

@@ -50,7 +50,7 @@ async function detailFor(item: VintedItem) {
 
 export async function POST(request: Request) {
   try {
-    if (!(await verifyAdmin(request))) return Response.json({ error: "Accès refusé" }, { status: 401 });
+    if (!(await verifyAdmin(request))) return Response.json({ error: "Session expirée ou adresse ADMIN_EMAIL incorrecte. Reconnecte-toi puis vérifie la variable Vercel." }, { status: 401 });
 
     const listData = await vintedFetch(`/api/v2/users/${PROFILE_ID}/items?page=1&per_page=96&order=newest_first`);
     const listed: VintedItem[] = Array.isArray(listData.items) ? listData.items : [];

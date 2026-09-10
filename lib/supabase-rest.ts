@@ -49,7 +49,7 @@ function displayableImage(value: unknown) {
   if (typeof value !== "string" || !value) return false;
   try {
     const url = new URL(value, "https://storeimr.local");
-    if (/(^|\\.)vinted\\.net$/i.test(url.hostname)) return !!url.searchParams.get("s");
+    if (/(^|\.)vinted\.net$/i.test(url.hostname)) return !!url.searchParams.get("s");
     return true;
   } catch { return false; }
 }

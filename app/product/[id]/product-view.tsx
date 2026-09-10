@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, Heart, ShieldC
 import type { Product } from "../../products";
 
 export default function ProductView({ product }: { product: Product }) {
-  const images = product.imageUrls?.length ? product.imageUrls : ["/storeimr-hero.png"];
+  const [images, setImages] = useState(() => product.imageUrls?.length ? product.imageUrls : ["/storeimr-hero.png"]);
   const [index, setIndex] = useState(0);
   const [accent, setAccent] = useState("rgb(107, 124, 255)");
   const [favorite, setFavorite] = useState(false);
@@ -33,6 +33,14 @@ export default function ProductView({ product }: { product: Product }) {
     };
   }, [images, index]);
 
+  function discardBrokenImage(url: string) {
+    setImages(current => {
+      const remaining = current.filter(image => image !== url);
+      const nextImages = remaining.length ? remaining : ["/storeimr-hero.png"];
+      setIndex(currentIndex => Math.min(currentIndex, nextImages.length - 1));
+      return nextImages;
+    });
+  }
   const previous=()=>setIndex(current=>(current-1+images.length)%images.length);
   const next=()=>setIndex(current=>(current+1)%images.length);
   const theme={"--product-accent":accent,"--product-soft":`color-mix(in srgb, ${accent} 16%, #f6f7f9)`} as CSSProperties;
@@ -50,12 +58,12 @@ export default function ProductView({ product }: { product: Product }) {
     <section className="neo-product-layout">
       <div className="neo-media">
         <div className="neo-stage">
-          <img src={images[index]} alt={`${product.name} — photo ${index+1}`}/>
+          <img src={images[index]} alt={`${product.name} — photo ${index+1}`} onError={() => discardBrokenImage(images[index])}/>
           <span className="neo-condition"><i/>{product.condition}</span>
           <span className="neo-photo-index">{String(index+1).padStart(2,"0")} / {String(images.length).padStart(2,"0")}</span>
           {images.length>1&&<><button className="neo-arrow prev" onClick={previous} aria-label="Photo précédente"><ChevronLeft/></button><button className="neo-arrow next" onClick={next} aria-label="Photo suivante"><ChevronRight/></button></>}
         </div>
-        {images.length>1&&<div className="neo-thumbs" aria-label="Photos du produit">{images.map((url,i)=><button key={url} className={i===index?"active":""} onClick={()=>setIndex(i)} aria-label={`Afficher la photo ${i+1}`}><img src={url} alt=""/></button>)}</div>}
+        {images.length>1&&<div className="neo-thumbs" aria-label="Photos du produit">{images.map((url,i)=><button key={url} className={i===index?"active":""} onClick={()=>setIndex(i)} aria-label={`Afficher la photo ${i+1}`}><img src={url} alt="" onError={() => discardBrokenImage(url)}/></button>)}</div>}
       </div>
 
       <aside className="neo-product-panel">

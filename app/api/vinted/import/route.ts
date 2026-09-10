@@ -89,8 +89,20 @@ async function publicDressingItems() {
 export async function POST(request: Request) {
   try {
     if (!(await verifyAdmin(request))) return Response.json({ error: "Session expirée ou adresse ADMIN_EMAIL incorrecte. Reconnecte-toi puis vérifie la variable Vercel." }, { status: 401 });
-    const listed = await publicDressingItems();
-    if (!listed.length) return Response.json({ error: "Vinted masque actuellement les annonces du dressing. Utilise l’ajout par lien individuel." }, { status: 422 });
+    let submitted: unknown = undefined;
+    try { submitted = await request.json(); } catch {}
+    const rawUrls = Array.isArray((submitted as { urls?: unknown })?.urls) ? (submitted as { urls: unknown[] }).urls : [];
+    const directItems: VintedItem[] = [];
+    for (const raw of rawUrls.slice(0, 60)) {
+      try {
+        const url = new URL(String(raw).trim());
+        if (!/(^|\\.)vinted\\.lu$/i.test(url.hostname)) continue;
+        const id = url.pathname.match(/^\\/items\\/(\\d+)/)?.[1];
+        if (id) directItems.push({ id: Number(id), url: `${VINTED_ORIGIN}${url.pathname}` });
+      } catch {}
+    }
+    const listed = directItems.length ? directItems : await publicDressingItems();
+    if (!listed.length) return Response.json({ error: "Aucun lien d’annonce Vinted valide n’a été trouvé." }, { status: 422 });
 
     const existingResponse = await supabaseRest("/rest/v1/products?select=vinted_url");
     const existingRows = existingResponse.ok ? await existingResponse.json() as { vinted_url?: string }[] : [];

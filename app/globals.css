@@ -325,3 +325,9 @@ button,a{-webkit-tap-highlight-color:transparent}
 @media(max-width:390px){
   .pb-campaign{height:510px}.pb-campaign h1{font-size:42px}.pb-campaign p{font-size:13px}
 }
+
+
+/* Import Vinted */
+.admin-title-actions{display:flex;align-items:center;gap:9px}.admin-title-actions button{min-height:50px;padding:0 21px;border-radius:999px;border:0;background:#111;color:#fff;display:flex;align-items:center;justify-content:center;gap:9px;font-weight:900;cursor:pointer}.admin-title-actions .vinted-import{background:#fff;color:#111;border:1px solid #d4d4cf;box-shadow:0 9px 25px #0000000b}.admin-title-actions .vinted-import:hover{border-color:#111}.admin-title-actions button:disabled{opacity:.55;cursor:wait}
+@media(max-width:700px){.admin-title-actions{display:grid;grid-template-columns:1fr 1fr;margin-top:20px}.admin-title-actions button{min-height:48px;padding:0 12px;font-size:12px}.admin-title>button{margin-top:0}}
+@media(max-width:390px){.admin-title-actions{grid-template-columns:1fr}.admin-title-actions button{font-size:13px}}

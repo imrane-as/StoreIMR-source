@@ -2,6 +2,7 @@ import { supabaseRest, verifyAdmin } from "../../../../lib/supabase-rest";
 
 const PROFILE_ID = "315379493";
 const VINTED_ORIGIN = "https://www.vinted.lu";
+const VINTED_HOST = /^(?:www\.)?vinted\.(?:fr|lu|be|de|nl|es|it|pt|com)$/i;
 const browserHeaders = {
   "accept-language": "fr-FR,fr;q=0.9,en;q=0.7",
   "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
@@ -73,8 +74,8 @@ function categoryOf(item: VintedItem) {
   if (/sac|montre|casquette|ceinture|lunette|accessoire/.test(value)) return "Accessoires";
   return "Vêtements";
 }
-async function api(path: string) {
-  const response = await fetch(`${VINTED_ORIGIN}${path}`, { headers: { ...browserHeaders, accept: "application/json" }, cache: "no-store" });
+async function api(path: string, origin = VINTED_ORIGIN) {
+  const response = await fetch(`${origin}${path}`, { headers: { ...browserHeaders, accept: "application/json" }, cache: "no-store" });
   if (!response.ok) throw new Error(String(response.status));
   return response.json();
 }
@@ -185,11 +186,16 @@ function fromStructuredData(source: string, fallback: VintedItem): VintedItem {
   };
 }
 async function detailFor(item: VintedItem) {
+  let origin = VINTED_ORIGIN;
   try {
-    const data = await api(`/api/v2/items/${item.id}`);
-    return data.item || item;
+    const itemUrl = new URL(text(item.url));
+    if (VINTED_HOST.test(itemUrl.hostname)) origin = itemUrl.origin;
+  } catch {}
+  try {
+    const data = await api(`/api/v2/items/${item.id}`, origin);
+    return { ...item, ...(data.item || {}) };
   } catch {
-    try { return fromStructuredData(await html(text(item.url, `${VINTED_ORIGIN}/items/${item.id}`)), item); }
+    try { return fromStructuredData(await html(text(item.url, `${origin}/items/${item.id}`)), item); }
     catch { return item; }
   }
 }
@@ -212,10 +218,13 @@ export async function POST(request: Request) {
     for (const raw of rawUrls.slice(0, 60)) {
       try {
         const url = new URL(String(raw).trim());
-        if (!/(^|\.)vinted\.lu$/i.test(url.hostname)) continue;
+        if (!VINTED_HOST.test(url.hostname)) continue;
         const id = url.pathname.match(/^\/items\/(\d+)/)?.[1];
-        if (id) directItems.push({ id: Number(id), url: `${VINTED_ORIGIN}${url.pathname}` });
+        if (id) directItems.push({ id: Number(id), url: `${url.origin}${url.pathname}` });
       } catch {}
+    }
+    if (rawUrls.length && !directItems.length) {
+      return Response.json({ error: "Lien Vinted invalide. Utilise un lien d’annonce vinted.fr ou vinted.lu contenant /items/." }, { status: 422 });
     }
     const listed = directItems.length ? directItems : await publicDressingItems();
     if (!listed.length) return Response.json({ error: "Aucun lien d’annonce Vinted valide n’a été trouvé." }, { status: 422 });

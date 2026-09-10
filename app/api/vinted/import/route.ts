@@ -96,8 +96,8 @@ export async function POST(request: Request) {
     for (const raw of rawUrls.slice(0, 60)) {
       try {
         const url = new URL(String(raw).trim());
-        if (!/(^|\\.)vinted\\.lu$/i.test(url.hostname)) continue;
-        const id = url.pathname.match(/^\\/items\\/(\\d+)/)?.[1];
+        if (!/(^|\.)vinted\.lu$/i.test(url.hostname)) continue;
+        const id = url.pathname.match(/^\/items\/(\d+)/)?.[1];
         if (id) directItems.push({ id: Number(id), url: `${VINTED_ORIGIN}${url.pathname}` });
       } catch {}
     }

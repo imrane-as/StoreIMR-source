@@ -41,7 +41,20 @@ function itemLinks(source: string) {
   }
   return [...found].map(([id,url]) => ({ id: Number(id), url }));
 }
+function embeddedValue(source: string, keys: string[]) {
+  const normalized = source.replace(/&quot;/g, '"').replace(/\\u002F/g, "/");
+  for (const key of keys) {
+    const match = normalized.match(new RegExp(`"${key}"\\\\s*:\\\\s*"((?:\\\\\\\\.|[^"])*)"`, "i"));
+    if (!match) continue;
+    try { return JSON.parse(`"${match[1]}"`); } catch { return match[1]; }
+  }
+  return "";
+}
 function fromStructuredData(source: string, fallback: VintedItem): VintedItem {
+  const embeddedSize = embeddedValue(source, ["size_title", "size_name"]);
+  const embeddedStatus = embeddedValue(source, ["status_title", "condition_title", "status"]);
+  const embeddedBrand = embeddedValue(source, ["brand_title", "brand_name"]);
+  const embeddedColor = embeddedValue(source, ["color1", "color_title"]);
   const scripts = [...source.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
   for (const match of scripts) {
     try {
@@ -56,17 +69,17 @@ function fromStructuredData(source: string, fallback: VintedItem): VintedItem {
         description: text(product.description),
         photos: images,
         price: product.offers?.price,
-        brand_title: text(product.brand?.name || product.brand),
-        color1: text(product.color),
-        size_title: text(product.size),
-        status: text(product.itemCondition).split("/").pop() || "Voir l’annonce",
+        brand_title: embeddedBrand || text(product.brand?.name || product.brand),
+        color1: embeddedColor || text(product.color),
+        size_title: embeddedSize || text(product.size),
+        status: embeddedStatus || text(product.itemCondition).split("/").pop() || "Voir l’annonce",
       };
     } catch {}
   }
   const title = source.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)?.[1];
   const image = source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i)?.[1];
   const description = source.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)/i)?.[1];
-  return { ...fallback, title: title || fallback.title, description: description || "", photos: image ? [image] : [] };
+  return { ...fallback, title: title || fallback.title, description: description || "", photos: image ? [image] : [], size_title: embeddedSize, status: embeddedStatus, brand_title: embeddedBrand, color1: embeddedColor };
 }
 async function detailFor(item: VintedItem) {
   try {

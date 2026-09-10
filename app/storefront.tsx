@@ -6,7 +6,8 @@ import type { Product } from "./products";
 const categories = ["Tout", "Sneakers", "Vêtements", "Accessoires"] as const;
 
 export default function Storefront() {
-  const [catalog, setCatalog] = useState<Product[]>([]);\n  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalog, setCatalog] = useState<Product[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const [category, setCategory] = useState<(typeof categories)[number]>("Tout");
   const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState<number[]>([]);

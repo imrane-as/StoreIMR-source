@@ -44,11 +44,11 @@ export default function Storefront() {
       <a className="pb-vinted-drawer" href="https://www.vinted.fr" target="_blank" rel="noreferrer">Acheter sur Vinted</a>
     </aside>}
 
-    <section className="pb-campaign" id="top">
+    <section className="pb-campaign" id="top"><div className="future-orb future-orb-a"/><div className="future-orb future-orb-b"/><div className="future-grid"/>
       <div className="pb-campaign-copy">
-        <span>NEW SEASON / STOREIMR</span>
+        <span className="future-status"><i/> COLLECTION ACTIVE / DROP 01</span>
         <h1>Le nouveau<br/>streetwear.</h1>
-        <p>Des sneakers et pièces sélectionnées une par une.</p>
+        <p>Une sélection de sneakers et pièces fortes, pensée pour maintenant et pour demain.</p><div className="future-code"><span>CURATED / 01</span><span>METZ — LUXEMBOURG</span></div>
         <div><a href="#collection">Voir la collection</a><a href="https://www.vinted.fr" target="_blank" rel="noreferrer">Voir sur Vinted</a></div>
       </div>
     </section>
@@ -64,7 +64,7 @@ export default function Storefront() {
         <label><Search/><input id="catalog-search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Rechercher"/></label>
       </div>
 
-      <div className="pb-grid">
+      <div className="pb-grid" id="favoris">
         {visible.map(product => {
           const image = product.imageUrls?.[0] || "/storeimr-hero.png";
           return <article className="pb-card" key={product.id}>

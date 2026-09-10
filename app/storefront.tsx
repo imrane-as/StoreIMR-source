@@ -1,21 +1,35 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Heart, Menu, Search, X } from "lucide-react";
-import { products as fallbackProducts, type Product } from "./products";
+import type { Product } from "./products";
 
 const categories = ["Tout", "Sneakers", "Vêtements", "Accessoires"] as const;
 
 export default function Storefront() {
-  const [catalog, setCatalog] = useState<Product[]>(fallbackProducts);
+  const [catalog, setCatalog] = useState<Product[]>([]);\n  const [catalogLoading, setCatalogLoading] = useState(true);
   const [category, setCategory] = useState<(typeof categories)[number]>("Tout");
   const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState<number[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    fetch("/api/products").then(r => r.json()).then(data => {
-      if (data.products?.length) setCatalog(data.products);
-    }).catch(() => {});
+    let active = true;
+
+    fetch("/api/products")
+      .then(response => response.json())
+      .then(data => {
+        if (active) setCatalog(Array.isArray(data.products) ? data.products : []);
+      })
+      .catch(() => {
+        if (active) setCatalog([]);
+      })
+      .finally(() => {
+        if (active) setCatalogLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const visible = useMemo(() => catalog.filter(product =>
@@ -56,7 +70,7 @@ export default function Storefront() {
     <section className="pb-shop" id="collection">
       <div className="pb-shop-head" id="nouveautes">
         <div><span>STOREIMR COLLECTION</span><h2>Nouveautés</h2></div>
-        <p>{visible.length} article{visible.length > 1 ? "s" : ""}</p>
+        <p>{catalogLoading ? "Chargement…" : `${visible.length} article${visible.length > 1 ? "s" : ""}`}</p>
       </div>
 
       <div className="pb-filters">
@@ -65,11 +79,18 @@ export default function Storefront() {
       </div>
 
       <div className="pb-grid" id="favoris">
-        {visible.map(product => {
-          const image = product.imageUrls?.[0] || "/storeimr-hero.png";
+        {catalogLoading && Array.from({ length: 4 }, (_, index) => (
+          <div className="pb-card-skeleton" key={index} aria-hidden="true">
+            <div/><span/><span/>
+          </div>
+        ))}
+        {!catalogLoading && visible.map(product => {
+          const image = product.imageUrls?.[0];
           return <article className="pb-card" key={product.id}>
             <div className="pb-card-media">
-              <a href={`/product/${product.id}`}><img src={image} alt={product.name}/></a>
+              <a href={`/product/${product.id}`}>
+                {image ? <img src={image} alt={product.name}/> : <span className="pb-photo-missing">Photo indisponible</span>}
+              </a>
               <span>{product.condition}</span>
               <button className={favorites.includes(product.id) ? "active" : ""} onClick={() => setFavorites(current => current.includes(product.id) ? current.filter(id => id !== product.id) : [...current, product.id])} aria-label="Ajouter aux favoris"><Heart/></button>
             </div>
@@ -80,7 +101,7 @@ export default function Storefront() {
           </article>;
         })}
       </div>
-      {!visible.length && <div className="pb-empty"><h3>Aucun résultat</h3><p>Essaie une autre catégorie ou recherche.</p></div>}
+      {!catalogLoading && !visible.length && <div className="pb-empty"><h3>Aucun article disponible</h3><p>La prochaine sélection arrive bientôt.</p></div>}
     </section>
 
     <section className="pb-banner">

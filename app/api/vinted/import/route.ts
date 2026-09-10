@@ -13,8 +13,59 @@ function amount(value: any) {
   const parsed = Number(value?.amount ?? value?.numeric_amount ?? value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
+function cleanUrl(value: string) {
+  return value.replace(/\\u002F/gi, "/").replace(/\\u0026/gi, "&").replace(/\\\//g, "/").replace(/&amp;/g, "&").replace(/&quot;.*$/i, "");
+}
 function publicImage(photo: any) {
-  return text(photo) || text(photo?.url) || text(photo?.full_size_url) || text(photo?.image_url) || text(photo?.high_resolution?.url);
+  const value = text(photo) || text(photo?.full_size_url) || text(photo?.high_resolution?.url) || text(photo?.url) || text(photo?.image_url);
+  return value ? cleanUrl(value) : "";
+}
+function unique(values: string[]) {
+  return [...new Set(values.map(value => cleanUrl(value).trim()).filter(Boolean))];
+}
+function attributeValue(item: VintedItem, names: RegExp) {
+  const groups = [item.item_attributes, item.attributes, item.item_details].filter(Array.isArray);
+  for (const group of groups) {
+    for (const entry of group) {
+      const label = text(entry?.name || entry?.title || entry?.code);
+      if (!names.test(label)) continue;
+      const value = entry?.value_title || entry?.value?.title || entry?.value || entry?.display_value;
+      if (Array.isArray(value)) return value.map(part => text(part?.title || part)).filter(Boolean).join(", ");
+      if (typeof value === "number") return String(value);
+      if (text(value)) return text(value);
+    }
+  }
+  return "";
+}
+function sizeOf(item: VintedItem) {
+  return text(item.size_title || item.size?.title || item.size_name) || attributeValue(item, /taille|pointure|size/i);
+}
+function conditionOf(item: VintedItem) {
+  return text(item.status_title || item.condition_title || item.status?.title || item.condition?.title || item.status) || attributeValue(item, /état|condition|status/i);
+}
+function brandOf(item: VintedItem) {
+  return text(item.brand_title || item.brand?.title || item.brand?.name || item.brand_name) || attributeValue(item, /marque|brand/i);
+}
+function colorOf(item: VintedItem) {
+  const colors = Array.isArray(item.colors) ? item.colors.map((color:any) => text(color?.title || color)).filter(Boolean).join(", ") : "";
+  return text(item.color1 || item.color?.title || item.color_title) || colors || attributeValue(item, /couleur|color/i);
+}
+function materialOf(item: VintedItem) {
+  const materials = Array.isArray(item.materials) ? item.materials.map((material:any) => text(material?.title || material)).filter(Boolean).join(", ") : "";
+  return text(item.material_title || item.material?.title || item.material) || materials || attributeValue(item, /matière|material|composition/i);
+}
+function detailsFor(item: VintedItem, favorites: number) {
+  const size = sizeOf(item);
+  const category = categoryOf(item);
+  return [
+    brandOf(item) && `Marque : ${brandOf(item)}`,
+    size && `${category === "Sneakers" ? "Pointure" : "Taille"} : ${size}`,
+    conditionOf(item) && `État : ${conditionOf(item)}`,
+    colorOf(item) && `Couleur : ${colorOf(item)}`,
+    materialOf(item) && `Matière : ${materialOf(item)}`,
+    text(item.catalog?.title) && `Catégorie Vinted : ${text(item.catalog?.title)}`,
+    favorites > 0 ? `${favorites} favori${favorites > 1 ? "s" : ""} sur Vinted` : "",
+  ].filter(Boolean) as string[];
 }
 function categoryOf(item: VintedItem) {
   const value = `${text(item.catalog?.title)} ${text(item.title)}`.toLowerCase();
@@ -50,36 +101,88 @@ function embeddedValue(source: string, keys: string[]) {
   }
   return "";
 }
+function findItemInJson(root: any, id: number) {
+  let best: VintedItem | undefined;
+  let bestScore = -1;
+  const stack = [root];
+  const visited = new Set<any>();
+  while (stack.length) {
+    const value = stack.pop();
+    if (!value || typeof value !== "object" || visited.has(value)) continue;
+    visited.add(value);
+    if (Array.isArray(value)) {
+      stack.push(...value);
+      continue;
+    }
+    const candidateId = Number(value.id ?? value.item_id);
+    const score = (text(value.title || value.name) ? 2 : 0) + (Array.isArray(value.photos) ? 5 : 0) +
+      (text(value.description) ? 2 : 0) + (value.price ? 1 : 0) + (sizeOf(value) ? 1 : 0);
+    if (candidateId === id && score > bestScore) {
+      best = value;
+      bestScore = score;
+    }
+    stack.push(...Object.values(value));
+  }
+  return best;
+}
+function htmlImageUrls(source: string) {
+  const normalized = source.replace(/\\u002F/gi, "/").replace(/\\u0026/gi, "&").replace(/\\\//g, "/").replace(/&amp;/g, "&");
+  const urls = [...normalized.matchAll(/https?:\/\/(?:images\d*\.)?vinted\.net\/[^"'<>\\s]+/gi)].map(match => match[0]);
+  return unique(urls.filter(url => /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(url)));
+}
 function fromStructuredData(source: string, fallback: VintedItem): VintedItem {
   const embeddedSize = embeddedValue(source, ["size_title", "size_name"]);
   const embeddedStatus = embeddedValue(source, ["status_title", "condition_title", "status"]);
   const embeddedBrand = embeddedValue(source, ["brand_title", "brand_name"]);
   const embeddedColor = embeddedValue(source, ["color1", "color_title"]);
-  const scripts = [...source.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
-  for (const match of scripts) {
-    try {
-      const parsed = JSON.parse(match[1]);
-      const candidates = Array.isArray(parsed) ? parsed : parsed?.["@graph"] || [parsed];
-      const product = candidates.find((entry:any) => entry?.["@type"] === "Product");
-      if (!product) continue;
-      const images = (Array.isArray(product.image) ? product.image : [product.image]).filter(Boolean);
-      return {
-        ...fallback,
-        title: text(product.name, text(fallback.title)),
-        description: text(product.description),
-        photos: images,
-        price: product.offers?.price,
-        brand_title: embeddedBrand || text(product.brand?.name || product.brand),
-        color1: embeddedColor || text(product.color),
-        size_title: embeddedSize || text(product.size),
-        status: embeddedStatus || text(product.itemCondition).split("/").pop() || "Voir l’annonce",
-      };
-    } catch {}
+  const embeddedMaterial = embeddedValue(source, ["material_title", "material"]);
+  const scriptBodies = [...source.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1].trim());
+  const parsedScripts: any[] = [];
+  for (const body of scriptBodies) {
+    if (!body || (!body.startsWith("{") && !body.startsWith("["))) continue;
+    try { parsedScripts.push(JSON.parse(body)); } catch {}
   }
-  const title = source.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)?.[1];
-  const image = source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i)?.[1];
-  const description = source.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)/i)?.[1];
-  return { ...fallback, title: title || fallback.title, description: description || "", photos: image ? [image] : [], size_title: embeddedSize, status: embeddedStatus, brand_title: embeddedBrand, color1: embeddedColor };
+  const embeddedItems = parsedScripts.map(value => findItemInJson(value, Number(fallback.id))).filter(Boolean) as VintedItem[];
+  const best = embeddedItems.sort((a,b) => (Array.isArray(b.photos) ? b.photos.length : 0) - (Array.isArray(a.photos) ? a.photos.length : 0))[0] || {};
+  const productImages: string[] = [];
+  let productName = "";
+  let productDescription = "";
+  let productPrice: unknown;
+  let productBrand = "";
+  let productColor = "";
+  for (const parsed of parsedScripts) {
+    const candidates = Array.isArray(parsed) ? parsed : parsed?.["@graph"] || [parsed];
+    const product = candidates.find((entry:any) => entry?.["@type"] === "Product");
+    if (!product) continue;
+    productImages.push(...(Array.isArray(product.image) ? product.image : [product.image]).map(publicImage).filter(Boolean));
+    productName ||= text(product.name);
+    productDescription ||= text(product.description);
+    productPrice ||= product.offers?.price;
+    productBrand ||= text(product.brand?.name || product.brand);
+    productColor ||= text(product.color);
+  }
+  const ogTitle = source.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)?.[1] || "";
+  const ogImage = source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i)?.[1] || "";
+  const ogDescription = source.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)/i)?.[1] || "";
+  const photos = unique([
+    ...(Array.isArray(best.photos) ? best.photos.map(publicImage) : []),
+    ...productImages,
+    publicImage(ogImage),
+    ...htmlImageUrls(source),
+  ]);
+  return {
+    ...fallback,
+    ...best,
+    title: text(best.title || best.name, productName || ogTitle || text(fallback.title)),
+    description: text(best.description, productDescription || ogDescription),
+    photos,
+    price: best.price || productPrice || fallback.price,
+    brand_title: brandOf(best) || embeddedBrand || productBrand,
+    color1: colorOf(best) || embeddedColor || productColor,
+    size_title: sizeOf(best) || embeddedSize,
+    status_title: conditionOf(best) || embeddedStatus,
+    material_title: materialOf(best) || embeddedMaterial,
+  };
 }
 async function detailFor(item: VintedItem) {
   try {
@@ -117,37 +220,43 @@ export async function POST(request: Request) {
     const listed = directItems.length ? directItems : await publicDressingItems();
     if (!listed.length) return Response.json({ error: "Aucun lien d’annonce Vinted valide n’a été trouvé." }, { status: 422 });
 
-    const existingResponse = await supabaseRest("/rest/v1/products?select=id,vinted_url,size,condition,brand,color");
-    const existingRows = existingResponse.ok ? await existingResponse.json() as { id:number; vinted_url?:string; size?:string; condition?:string; brand?:string; color?:string }[] : [];
-    const existing = new Map(existingRows.filter(row => row.vinted_url).map(row => [row.vinted_url as string, row]));
+    const existingResponse = await supabaseRest("/rest/v1/products?select=id,name,vinted_url,size,condition,brand,color,description,details,image_urls");
+    const existingRows = existingResponse.ok ? await existingResponse.json() as { id:number; name?:string; vinted_url?:string; size?:string; condition?:string; brand?:string; color?:string; description?:string; details?:unknown; image_urls?:unknown }[] : [];
+    const vintedKey = (url: string) => url.match(/\/items\/(\d+)/)?.[1] || url.split("?")[0];
+    const existing = new Map(existingRows.filter(row => row.vinted_url).map(row => [vintedKey(row.vinted_url as string), row]));
     const imported: Record<string,unknown>[] = [];
     let completed = 0;
 
     for (const listedItem of listed.slice(0,60)) {
       const item = await detailFor(listedItem);
       const vintedUrl = text(item.url) || `${VINTED_ORIGIN}/items/${item.id}`;
-      const existingProduct = existing.get(vintedUrl);
-      const images = (Array.isArray(item.photos) ? item.photos : []).map(publicImage).filter(Boolean);
+      const existingProduct = existing.get(vintedKey(vintedUrl));
+      const images = unique((Array.isArray(item.photos) ? item.photos : []).map(publicImage).filter(Boolean));
       const fallbackImage = publicImage(item.photo);
       if (!images.length && fallbackImage) images.push(fallbackImage);
       const favorites = Number(item.favourite_count ?? item.favorites_count ?? item.favourites_count ?? 0);
-      const details = [
-        text(item.size_title || item.size?.title) && `Taille : ${text(item.size_title || item.size?.title)}`,
-        favorites > 0 ? `${favorites} favori${favorites > 1 ? "s" : ""} sur Vinted` : "",
-        "Importé depuis le dressing Vinted StoreIMR",
-      ].filter(Boolean);
+      const details = detailsFor(item, favorites);
       const price = amount(item.price);
       if (!text(item.title) || !price) continue;
       if (existingProduct) {
-        const patch: Record<string,string> = {};
-        const importedSize = text(item.size_title || item.size?.title);
-        const importedCondition = text(item.status || item.status_title);
-        const importedBrand = text(item.brand_title || item.brand?.title);
-        const importedColor = text(item.color1 || item.color?.title);
+        const patch: Record<string,unknown> = {};
+        const importedSize = sizeOf(item);
+        const importedCondition = conditionOf(item);
+        const importedBrand = brandOf(item);
+        const importedColor = colorOf(item);
         if ((!existingProduct.size || existingProduct.size === "Non précisée") && importedSize) patch.size = importedSize;
         if ((!existingProduct.condition || existingProduct.condition === "Voir l’annonce") && importedCondition) patch.condition = importedCondition;
         if ((!existingProduct.brand || existingProduct.brand === "Non précisée") && importedBrand) patch.brand = importedBrand;
         if ((!existingProduct.color || existingProduct.color === "Voir les photos") && importedColor) patch.color = importedColor;
+        const currentImages = Array.isArray(existingProduct.image_urls) ? existingProduct.image_urls.map(value => text(value)).filter(Boolean) : [];
+        const mergedImages = unique([...currentImages, ...images]);
+        if (mergedImages.length > currentImages.length) patch.image_urls = mergedImages;
+        const currentDetails = Array.isArray(existingProduct.details) ? existingProduct.details.map(value => text(value)).filter(Boolean) : [];
+        const usefulDetails = currentDetails.filter(value => !/Importé depuis (?:le dressing )?Vinted/i.test(value));
+        const mergedDetails = unique([...usefulDetails, ...details]);
+        if (mergedDetails.join("\n") !== currentDetails.join("\n")) patch.details = mergedDetails;
+        const importedDescription = text(item.description);
+        if (importedDescription && (!existingProduct.description || existingProduct.description === existingProduct.name)) patch.description = importedDescription;
         if (Object.keys(patch).length) {
           const refresh = await supabaseRest(`/rest/v1/products?id=eq.${existingProduct.id}`, {
             method:"PATCH",headers:{"content-type":"application/json",prefer:"return=minimal"},body:JSON.stringify(patch),
@@ -157,12 +266,12 @@ export async function POST(request: Request) {
         continue;
       }
       imported.push({
-        name:text(item.title),brand:text(item.brand_title || item.brand?.title,"Non précisée"),category:categoryOf(item),
-        size:text(item.size_title || item.size?.title,"Non précisée"),condition:text(item.status || item.status_title,"Voir l’annonce"),
-        price,color:text(item.color1 || item.color?.title,"Voir les photos"),description:text(item.description,text(item.title)),
+        name:text(item.title),brand:brandOf(item) || "Non précisée",category:categoryOf(item),
+        size:sizeOf(item) || "Non précisée",condition:conditionOf(item) || "Voir l’annonce",
+        price,color:colorOf(item) || "Voir les photos",description:text(item.description,text(item.title)),
         details,vinted_url:vintedUrl,image_urls:images,active:true,
       });
-      existing.set(vintedUrl, { id:-1, vinted_url:vintedUrl });
+      existing.set(vintedKey(vintedUrl), { id:-1, vinted_url:vintedUrl });
     }
     if (imported.length) {
       const save = await supabaseRest("/rest/v1/products", { method:"POST",headers:{"content-type":"application/json",prefer:"return=minimal"},body:JSON.stringify(imported) });

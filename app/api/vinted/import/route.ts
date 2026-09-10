@@ -100,8 +100,27 @@ function categoryOf(item: VintedItem) {
   if (/sac|montre|casquette|ceinture|lunette|accessoire/.test(value)) return "Accessoires";
   return "Vêtements";
 }
+async function anonymousSession(origin: string) {
+  try {
+    const response = await fetch(origin, { headers: { ...browserHeaders, accept: "text/html,application/xhtml+xml" }, cache: "no-store", redirect: "follow" });
+    const values = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() || [response.headers.get("set-cookie") || ""];
+    const cookie = values.map(value => value.split(";")[0]).filter(Boolean).join("; ");
+    const csrfValue = values.join(";").match(/(?:^|[;,]\s*)XSRF-TOKEN=([^;]+)/i)?.[1];
+    return { cookie, csrf: csrfValue ? decodeURIComponent(csrfValue) : "" };
+  } catch { return { cookie: "", csrf: "" }; }
+}
 async function api(path: string, origin = VINTED_ORIGIN) {
-  const response = await fetch(`${origin}${path}`, { headers: { ...browserHeaders, accept: "application/json" }, cache: "no-store" });
+  const requestHeaders: Record<string,string> = { ...browserHeaders, accept: "application/json", referer: `${origin}/` };
+  let response = await fetch(`${origin}${path}`, { headers: requestHeaders, cache: "no-store" });
+  if (response.status === 401 || response.status === 403) {
+    const session = await anonymousSession(origin);
+    if (session.cookie) {
+      response = await fetch(`${origin}${path}`, {
+        headers: { ...requestHeaders, cookie: session.cookie, ...(session.csrf ? { "x-csrf-token": session.csrf } : {}) },
+        cache: "no-store",
+      });
+    }
+  }
   if (!response.ok) throw new Error(String(response.status));
   return response.json();
 }

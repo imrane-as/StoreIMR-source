@@ -45,6 +45,15 @@ export async function uploadProductImages(files: File[]) {
   return urls;
 }
 
+function displayableImage(value: unknown) {
+  if (typeof value !== "string" || !value) return false;
+  try {
+    const url = new URL(value, "https://storeimr.local");
+    if (/(^|\\.)vinted\\.net$/i.test(url.hostname)) return !!url.searchParams.get("s");
+    return true;
+  } catch { return false; }
+}
+
 export function mapProduct(row: Record<string, unknown>) {
   return {
     id: Number(row.id), name: String(row.name), brand: String(row.brand),
@@ -52,6 +61,6 @@ export function mapProduct(row: Record<string, unknown>) {
     price: Number(row.price), color: String(row.color), position: "center",
     description: String(row.description || ""), details: Array.isArray(row.details) ? row.details : [],
     vintedUrl: String(row.vinted_url || "https://www.vinted.fr"),
-    imageUrls: Array.isArray(row.image_urls) ? row.image_urls : [],
+    imageUrls: Array.isArray(row.image_urls) ? row.image_urls.filter(displayableImage) : [],
   };
 }

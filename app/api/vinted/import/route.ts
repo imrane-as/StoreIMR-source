@@ -117,15 +117,16 @@ export async function POST(request: Request) {
     const listed = directItems.length ? directItems : await publicDressingItems();
     if (!listed.length) return Response.json({ error: "Aucun lien d’annonce Vinted valide n’a été trouvé." }, { status: 422 });
 
-    const existingResponse = await supabaseRest("/rest/v1/products?select=vinted_url");
-    const existingRows = existingResponse.ok ? await existingResponse.json() as { vinted_url?: string }[] : [];
-    const existing = new Set(existingRows.map(row => row.vinted_url).filter(Boolean));
+    const existingResponse = await supabaseRest("/rest/v1/products?select=id,vinted_url,size,condition,brand,color");
+    const existingRows = existingResponse.ok ? await existingResponse.json() as { id:number; vinted_url?:string; size?:string; condition?:string; brand?:string; color?:string }[] : [];
+    const existing = new Map(existingRows.filter(row => row.vinted_url).map(row => [row.vinted_url as string, row]));
     const imported: Record<string,unknown>[] = [];
+    let completed = 0;
 
     for (const listedItem of listed.slice(0,60)) {
       const item = await detailFor(listedItem);
       const vintedUrl = text(item.url) || `${VINTED_ORIGIN}/items/${item.id}`;
-      if (existing.has(vintedUrl)) continue;
+      const existingProduct = existing.get(vintedUrl);
       const images = (Array.isArray(item.photos) ? item.photos : []).map(publicImage).filter(Boolean);
       const fallbackImage = publicImage(item.photo);
       if (!images.length && fallbackImage) images.push(fallbackImage);
@@ -137,19 +138,37 @@ export async function POST(request: Request) {
       ].filter(Boolean);
       const price = amount(item.price);
       if (!text(item.title) || !price) continue;
+      if (existingProduct) {
+        const patch: Record<string,string> = {};
+        const importedSize = text(item.size_title || item.size?.title);
+        const importedCondition = text(item.status || item.status_title);
+        const importedBrand = text(item.brand_title || item.brand?.title);
+        const importedColor = text(item.color1 || item.color?.title);
+        if ((!existingProduct.size || existingProduct.size === "Non précisée") && importedSize) patch.size = importedSize;
+        if ((!existingProduct.condition || existingProduct.condition === "Voir l’annonce") && importedCondition) patch.condition = importedCondition;
+        if ((!existingProduct.brand || existingProduct.brand === "Non précisée") && importedBrand) patch.brand = importedBrand;
+        if ((!existingProduct.color || existingProduct.color === "Voir les photos") && importedColor) patch.color = importedColor;
+        if (Object.keys(patch).length) {
+          const refresh = await supabaseRest(`/rest/v1/products?id=eq.${existingProduct.id}`, {
+            method:"PATCH",headers:{"content-type":"application/json",prefer:"return=minimal"},body:JSON.stringify(patch),
+          });
+          if (refresh.ok) completed++;
+        }
+        continue;
+      }
       imported.push({
         name:text(item.title),brand:text(item.brand_title || item.brand?.title,"Non précisée"),category:categoryOf(item),
         size:text(item.size_title || item.size?.title,"Non précisée"),condition:text(item.status || item.status_title,"Voir l’annonce"),
         price,color:text(item.color1 || item.color?.title,"Voir les photos"),description:text(item.description,text(item.title)),
         details,vinted_url:vintedUrl,image_urls:images,active:true,
       });
-      existing.add(vintedUrl);
+      existing.set(vintedUrl, { id:-1, vinted_url:vintedUrl });
     }
     if (imported.length) {
       const save = await supabaseRest("/rest/v1/products", { method:"POST",headers:{"content-type":"application/json",prefer:"return=minimal"},body:JSON.stringify(imported) });
       if (!save.ok) throw new Error(`Enregistrement impossible : ${await save.text()}`);
     }
-    return Response.json({ imported:imported.length,found:listed.length,skipped:listed.length-imported.length,note:"Lecture réalisée depuis les pages publiques Vinted." });
+    return Response.json({ imported:imported.length,completed,found:listed.length,skipped:listed.length-imported.length-completed,note:"Les champs manquants ont été complétés sans remplacer tes modifications." });
   } catch (error) {
     const status = error instanceof Error ? error.message : "";
     return Response.json({ error: status === "401" ? "Vinted bloque aussi temporairement la page publique. Réessaie plus tard ou importe les liens individuellement." : "Lecture du dressing Vinted impossible." }, { status:502 });

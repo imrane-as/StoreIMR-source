@@ -1,4 +1,4 @@
-import { supabaseRest, verifyAdmin } from "../../../../lib/supabase-rest";
+import { supabaseRest, uploadProductImages, verifyAdmin } from "../../../../lib/supabase-rest";
 
 const PROFILE_ID = "315379493";
 const VINTED_ORIGIN = "https://www.vinted.lu";
@@ -23,6 +23,32 @@ function publicImage(photo: any) {
 }
 function unique(values: string[]) {
   return [...new Set(values.map(value => cleanUrl(value).trim()).filter(Boolean))];
+}
+function isVintedImage(url: string) {
+  try { return /(^|\.)vinted\.net$/i.test(new URL(url).hostname); } catch { return false; }
+}
+function isUsableImage(url: string) {
+  try {
+    const parsed = new URL(url);
+    return !isVintedImage(url) || (!!parsed.searchParams.get("s") && /\/f\d+\//i.test(parsed.pathname));
+  } catch { return false; }
+}
+async function persistImages(urls: string[], itemId: number) {
+  const files: File[] = [];
+  for (const [index, url] of unique(urls).filter(isUsableImage).slice(0, 20).entries()) {
+    try {
+      const response = await fetch(url, { headers: { ...browserHeaders, accept: "image/avif,image/webp,image/*" }, cache: "no-store" });
+      if (!response.ok) continue;
+      const type = response.headers.get("content-type") || "image/webp";
+      if (!type.startsWith("image/")) continue;
+      const blob = await response.blob();
+      if (!blob.size) continue;
+      const extension = type.includes("png") ? "png" : type.includes("jpeg") ? "jpg" : "webp";
+      files.push(new File([blob], `vinted-${itemId}-${index + 1}.${extension}`, { type }));
+    } catch {}
+  }
+  if (!files.length) return [];
+  try { return await uploadProductImages(files); } catch { return []; }
 }
 function attributeValue(item: VintedItem, names: RegExp) {
   const groups = [item.item_attributes, item.attributes, item.item_details].filter(Array.isArray);
@@ -165,12 +191,8 @@ function fromStructuredData(source: string, fallback: VintedItem): VintedItem {
   const ogTitle = source.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)?.[1] || "";
   const ogImage = source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i)?.[1] || "";
   const ogDescription = source.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)/i)?.[1] || "";
-  const photos = unique([
-    ...(Array.isArray(best.photos) ? best.photos.map(publicImage) : []),
-    ...productImages,
-    publicImage(ogImage),
-    ...htmlImageUrls(source),
-  ]);
+  const structuredPhotos = Array.isArray(best.photos) ? best.photos.map(publicImage) : [];
+  const photos = unique(structuredPhotos.length ? structuredPhotos : [...productImages, publicImage(ogImage)]).filter(isUsableImage);
   return {
     ...fallback,
     ...best,
@@ -240,9 +262,13 @@ export async function POST(request: Request) {
       const item = await detailFor(listedItem);
       const vintedUrl = text(item.url) || `${VINTED_ORIGIN}/items/${item.id}`;
       const existingProduct = existing.get(vintedKey(vintedUrl));
-      const images = unique((Array.isArray(item.photos) ? item.photos : []).map(publicImage).filter(Boolean));
+      const images = unique((Array.isArray(item.photos) ? item.photos : []).map(publicImage).filter(isUsableImage));
       const fallbackImage = publicImage(item.photo);
-      if (!images.length && fallbackImage) images.push(fallbackImage);
+      if (!images.length && isUsableImage(fallbackImage)) images.push(fallbackImage);
+      const currentImages = existingProduct && Array.isArray(existingProduct.image_urls) ? existingProduct.image_urls.map(value => text(value)).filter(Boolean) : [];
+      const stableCurrentImages = currentImages.filter(url => !isVintedImage(url));
+      const savedImages = stableCurrentImages.length >= images.length && stableCurrentImages.length ? [] : await persistImages(images, Number(item.id));
+      const finalImages = savedImages.length ? savedImages : images;
       const favorites = Number(item.favourite_count ?? item.favorites_count ?? item.favourites_count ?? 0);
       const details = detailsFor(item, favorites);
       const price = amount(item.price);
@@ -257,9 +283,8 @@ export async function POST(request: Request) {
         if ((!existingProduct.condition || existingProduct.condition === "Voir l’annonce") && importedCondition) patch.condition = importedCondition;
         if ((!existingProduct.brand || existingProduct.brand === "Non précisée") && importedBrand) patch.brand = importedBrand;
         if ((!existingProduct.color || existingProduct.color === "Voir les photos") && importedColor) patch.color = importedColor;
-        const currentImages = Array.isArray(existingProduct.image_urls) ? existingProduct.image_urls.map(value => text(value)).filter(Boolean) : [];
-        const mergedImages = unique([...currentImages, ...images]);
-        if (mergedImages.length > currentImages.length) patch.image_urls = mergedImages;
+        const mergedImages = unique([...stableCurrentImages, ...finalImages]);
+        if (mergedImages.join("\n") !== currentImages.join("\n")) patch.image_urls = mergedImages;
         const currentDetails = Array.isArray(existingProduct.details) ? existingProduct.details.map(value => text(value)).filter(Boolean) : [];
         const usefulDetails = currentDetails.filter(value => !/Importé depuis (?:le dressing )?Vinted/i.test(value));
         const mergedDetails = unique([...usefulDetails, ...details]);
@@ -278,7 +303,7 @@ export async function POST(request: Request) {
         name:text(item.title),brand:brandOf(item) || "Non précisée",category:categoryOf(item),
         size:sizeOf(item) || "Non précisée",condition:conditionOf(item) || "Voir l’annonce",
         price,color:colorOf(item) || "Voir les photos",description:text(item.description,text(item.title)),
-        details,vinted_url:vintedUrl,image_urls:images,active:true,
+        details,vinted_url:vintedUrl,image_urls:finalImages,active:true,
       });
       existing.set(vintedKey(vintedUrl), { id:-1, vinted_url:vintedUrl });
     }

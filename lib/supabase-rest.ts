@@ -45,13 +45,27 @@ export async function uploadProductImages(files: File[]) {
   return urls;
 }
 
-function displayableImage(value: unknown) {
-  if (typeof value !== "string" || !value) return false;
-  try {
-    const url = new URL(value, "https://storeimr.local");
-    if (/(^|\.)vinted\.net$/i.test(url.hostname)) return !!url.searchParams.get("s");
-    return true;
-  } catch { return false; }
+function normalizeImageUrls(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const selected = new Map<string, { url: string; score: number }>();
+  for (const entry of value) {
+    if (typeof entry !== "string" || !entry) continue;
+    try {
+      const parsed = new URL(entry, "https://storeimr.local");
+      const isVinted = /(^|\.)vinted\.net$/i.test(parsed.hostname);
+      if (!isVinted) {
+        selected.set(entry, { url: entry, score: 3 });
+        continue;
+      }
+      if (!/\/f\d+\//i.test(parsed.pathname)) continue;
+      const photoKey = parsed.pathname.split("/").pop() || parsed.pathname;
+      const signed = !!parsed.searchParams.get("s");
+      const url = signed ? entry : `/api/vinted/image?url=${encodeURIComponent(entry)}`;
+      const score = signed ? 2 : 1;
+      if (!selected.has(photoKey) || (selected.get(photoKey)?.score || 0) < score) selected.set(photoKey, { url, score });
+    } catch {}
+  }
+  return [...selected.values()].map(image => image.url);
 }
 
 export function mapProduct(row: Record<string, unknown>) {
@@ -61,6 +75,6 @@ export function mapProduct(row: Record<string, unknown>) {
     price: Number(row.price), color: String(row.color), position: "center",
     description: String(row.description || ""), details: Array.isArray(row.details) ? row.details : [],
     vintedUrl: String(row.vinted_url || "https://www.vinted.fr"),
-    imageUrls: Array.isArray(row.image_urls) ? row.image_urls.filter(displayableImage) : [],
+    imageUrls: normalizeImageUrls(row.image_urls),
   };
 }
